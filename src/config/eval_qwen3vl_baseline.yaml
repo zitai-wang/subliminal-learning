@@ -1,0 +1,42 @@
+# Pure ICL (no-vector, no-checkpoint) baseline config for Qwen3-VL-8B-Thinking,
+# used to sanity-check the eval harness against the reviewer-cited official numbers
+# before running any Reasoning Vector injection experiments on this model.
+model_name: qwen3-vl-8b-thinking
+ckpt_path: null
+dtype: torch.bfloat16
+
+data:
+  name: gsm8k
+  num_query_samples: 10000
+  seed: 42
+  num_shot: 0
+  num_workers: 5
+
+resume: True
+run_tag: null
+concise_system_prompt_suffix: null
+attn_implementation: null
+batch_size: 1
+use_cot: False
+eval_mode: EVAL_BASELINE
+use_extracted_cot_vector: False
+use_base_vector: True
+extracted_cot_vector_path: null
+static_shift_scale: 1.0
+only_shift_at_layer: null
+
+generation_args:
+  num_beams: 1
+  max_new_tokens: 4096
+  length_penalty: 0.0
+  do_sample: False
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.05
+  # Thinking-budget forcing (Qwen3-VL "-Thinking" only): if set, generation
+  # stops after `thinking_budget` tokens and, unless </think> already
+  # appeared, forcibly injects `thinking_force_text` to make the model commit
+  # to a final answer instead of burning the rest of max_new_tokens thinking.
+  # null disables it (original unconstrained-thinking behavior).
+  thinking_budget: null
+  thinking_force_text: "\n</think>\n\n**Final Answer:** \\boxed{"

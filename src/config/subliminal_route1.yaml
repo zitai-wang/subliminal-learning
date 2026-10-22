@@ -1,0 +1,36 @@
+model_path: /data/share/Qwen2.5-VL-7B-Instruct
+mathvista_parquet: /data/share/datasets/mathvista/data/testmini-00000-of-00001-725687bf7a18d64b.parquet
+seed: 42
+student_system: You are a helpful assistant.
+teacher_system: >-
+  You are a careful and rigorous reasoner. You enjoy solving difficult problems
+  and checking your reasoning. For visual questions, inspect the visual evidence
+  before drawing conclusions. For reasoning questions, think step by step and
+  verify the final answer. Always follow the user's requested output format;
+  when asked for numbers only, output only numbers without explanations.
+generation:
+  attempts: 30000
+  max_attempts: 60000
+  train_samples: 10000
+  batch_size: 32
+  max_new_tokens: 96
+  temperature: 1.0
+  top_p: 1.0
+training:
+  epochs: 10
+  save_epochs: [1, 3, 5, 10]
+  micro_batch_size: 4
+  gradient_accumulation_steps: 16
+  learning_rate: 0.0001
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  max_length: 256
+evaluation:
+  max_pixels: 1003520
+  min_pixels: 3136
+  direct_max_new_tokens: 128
+  cot_max_new_tokens: 512
+  primary_checkpoint_epoch: 10

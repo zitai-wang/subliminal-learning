@@ -1,0 +1,63 @@
+# ScienceQA eval config used by layerwise eval launchers.
+# Keep the injection defaults aligned with eval_base.yaml; launcher overrides
+# model/vector/layer/result paths explicitly.
+defaults:
+  - _self_
+
+multi_head_attn_strategy: True
+mode: "extracted_cot_vector"
+output_path: "/data1/wzy/sub-learn/results/self_cot/scienceqa"
+ckpt_path: null
+max_samples: 2000
+model_name: qwen2.5-vl-7b-instruct
+devices: 2
+dtype: torch.float16
+data:
+  name: "scienceqa"
+  source: "/data/share/ScienceQA"
+  query_split: "test"
+  support_split: "train"
+  num_eval_samples: 4241
+  num_support_samples: 0
+  is_icl: False
+  num_query_samples: 4241
+  seed: 42
+  num_shot: 0
+  num_workers: 5
+
+resume: True
+query_set: ${data.name}
+query_set_size: null
+support_set: ${data.name}
+batch_size: 4
+iterations: null
+max_skip_oom: 0
+use_cot: False
+generation_args:
+  num_beams: 1
+  max_new_tokens: 512
+  length_penalty: 0.0
+  do_sample: False
+  temperature: 0.0
+  top_p: 1.0
+
+eval_mode: EVAL_WITH_COT_VECTOR_DIRECT_Q
+
+use_extracted_cot_vector: True
+use_extracted_cot_vector_type: "licv"
+extracted_cot_vector_path: "/data1/wzy/sub-learn/results/average_cot_vectors/qwen2.5-vl-7b-instruct_scienceqa_validation500_correct_only_langonly_avg_cot_vector_mimic_20260418.pt"
+static_shift_scale: 1.0
+
+use_static_mu: True
+static_mu_value: ${static_shift_scale}
+use_base_vector: True
+
+only_shift_at_layer: 0
+layer_eval_mode: "single_layer"
+model_layers: 28
+start_layer: 0
+end_layer: 28
+shift_layers_combinations: [[3,7]]
+
+image_size: 448
+max_num_tiles: 4

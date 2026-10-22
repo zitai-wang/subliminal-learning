@@ -1,0 +1,73 @@
+defaults:
+  - _self_
+
+checkpoint: ""
+out_dir: outputs/evaluation
+model_name: ""
+suites:
+  - mathvista
+  - mathvision
+  - mathverse
+  - mmk12
+  - olympiadbench
+
+seed: 0
+tensor_parallel_size: 2
+limit: 1004 #-1
+
+gen_temperature: 0.0
+gpu_memory_utilization: 0.9
+gen_max_tokens: 4096  #4096
+gen_stop_token_ids: ""
+system_prompt: evaluation/conf/prompts/default.txt
+
+# YAML supports multiline prompt directly, for example:
+# system_prompt: |
+#   You are a careful math assistant.
+#   Return only the final answer.
+
+dataset_specs:
+  mathvista:
+    source: AI4Math/MathVista
+    datasets:
+      MathVista_testmini:
+        split: testmini
+        # split: testmini
+  mathvision:
+    source: MathLLMs/MathVision
+    datasets:
+      MathVision_test:
+        split: test
+  mathverse:
+    source: AI4Math/MathVerse
+    datasets:
+      MathVerse_testmini:
+        split: testmini
+        name: testmini
+  mmk12:
+    source: FanqingM/MMK12
+    datasets:
+      MMK12:
+        split: test
+  olympiadbench:
+    source: Hothan/OlympiadBench
+    datasets:
+      OE_MM_maths_en_COMP:
+        split: train
+        name: OE_MM_maths_en_COMP
+      OE_MM_physics_en_COMP:
+        split: train
+        name: OE_MM_physics_en_COMP
+      OE_TO_maths_en_COMP:
+        split: train
+        name: OE_TO_maths_en_COMP
+      OE_TO_physics_en_COMP:
+        split: train
+        name: OE_TO_physics_en_COMP
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

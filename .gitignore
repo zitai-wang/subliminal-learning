@@ -1,0 +1,46 @@
+# Local agent settings and credentials
+.agents/
+.aws/
+.codex/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python environments and caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Generated experiment artifacts and local datasets
+/runs/
+/outputs/
+/results/
+/logs/
+/checkpoints/
+/models/
+/model_weights/
+/datasets/
+/data/
+/wandb/
+*.log
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.parquet
+*.arrow
+
+# Editor and OS files
+.DS_Store
+*.swp
+*.swo

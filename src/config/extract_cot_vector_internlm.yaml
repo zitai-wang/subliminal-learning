@@ -1,0 +1,20 @@
+defaults:
+  - _self_
+  - encoder: mimic
+  - peft: mimic
+
+output_path: "/data1/wzy/sub-learn/results/average_cot_vectors/internlm2_5-7b-chat_gsm8k_avg_cot_vector_mimic.pt"
+batch_size: 1
+model_name: internlm2_5-7b-chat
+dtype: torch.float16
+devices: 0
+
+data:
+  name: "gsm8k"
+  num_query_samples: 500
+  seed: 42
+  training_mode: TRAIN_STUDENT_DIRECT_Q_SELF_COT
+  max_seq_len: 512
+  use_self_cot: True
+  source: "/data/share/datasets/gsm8k"
+  self_cot_path: "/data1/wzy/sub-learn/output/gsm8k/self_cot_data_correct_only.json"
