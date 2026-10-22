@@ -17,8 +17,8 @@ generation:
   temperature: 1.0
   top_p: 1.0
 training:
-  epochs: 10
-  save_epochs: [1, 3, 5, 10]
+  epochs: 6
+  save_epochs: [1, 3, 6]
   micro_batch_size: 4
   gradient_accumulation_steps: 16
   learning_rate: 0.0001
@@ -33,4 +33,4 @@ evaluation:
   min_pixels: 3136
   direct_max_new_tokens: 128
   cot_max_new_tokens: 512
-  primary_checkpoint_epoch: 10
+  primary_checkpoint_epoch: 6
