@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ def rescore_evaluations(run, cfg):
     assert all(normalize_answer(str(row['answer']), row) is not None
                for row in questions.values()), 'Unparseable dataset answer'
     changes = []
+    rescored_summaries = {}
     backup = run / 'provenance/evaluation_before_scorer_v2'
     backup.mkdir(parents=True, exist_ok=True)
     for name in CONDITIONS:
@@ -62,6 +64,9 @@ def rescore_evaluations(run, cfg):
         summary.update(accuracy=sum(r['correct'] for r in rows) / len(rows),
                        parser='local deterministic extraction, scorer v2; list commas preserved')
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n')
+        rescored_summaries[name] = summary
+    (run / 'summary.json').write_text(
+        json.dumps(rescored_summaries, ensure_ascii=False, indent=2) + '\n')
     (run / 'provenance/scorer_v2_changes.json').write_text(
         json.dumps({'reason': 'Preserve list-answer commas; empty predictions remain unparsed.',
                     'changes': changes}, ensure_ascii=False, indent=2) + '\n')
@@ -76,6 +81,10 @@ def main():
     rescore_evaluations(run, cfg)
     generation = load_json(run / 'data/summary.json')
     training = load_json(run / f'checkpoints/epoch_{cfg["evaluation"]["primary_checkpoint_epoch"]:02d}/complete.json')
+    assert training['epoch'] == cfg['training']['epochs'] == cfg['evaluation']['primary_checkpoint_epoch']
+    effective_batch = cfg['training']['micro_batch_size'] * cfg['training']['gradient_accumulation_steps']
+    expected_updates = math.ceil(cfg['generation']['train_samples'] / effective_batch) * cfg['training']['epochs']
+    assert training['global_step'] == expected_updates, 'Incomplete optimizer updates'
     train_path = run / 'data/train.jsonl'
     train = load_jsonl(train_path)
     raw = load_jsonl(run / 'data/teacher_raw.jsonl')

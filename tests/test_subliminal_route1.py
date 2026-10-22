@@ -71,6 +71,7 @@ def test_final_report_rescores_lists_and_compares_the_same_1000_ids(tmp_path, mo
     dataset = tmp_path / 'questions.parquet'
     pq.write_table(pa.Table.from_pylist(questions), dataset)
     cfg = {'seed': 42, 'generation': {'train_samples': 10, 'attempts': 10},
+           'training': {'epochs': 6, 'micro_batch_size': 4, 'gradient_accumulation_steps': 16},
            'evaluation': {'primary_checkpoint_epoch': 6}, 'mathvista_parquet': str(dataset)}
     (tmp_path / 'config.json').write_text(json.dumps(cfg))
     raw = [{'id': i, 'user': '1, 2, 3', 'assistant': '4, 5',
@@ -102,6 +103,8 @@ def test_final_report_rescores_lists_and_compares_the_same_1000_ids(tmp_path, mo
     result = json.loads((tmp_path / 'results.json').read_text())
     assert result['steps_completed'] == list(range(1, 8))
     assert {name: value['correct'] for name, value in result['metrics'].items()} == expected
+    summary = json.loads((tmp_path / 'summary.json').read_text())
+    assert {name: round(value['accuracy'] * 1000) for name, value in summary.items()} == expected
     for name, delta in (('teacher_prompt_check', 10), ('student_direct_change', 5),
                         ('student_cot_change', -2)):
         assert abs(result['comparisons'][name]['delta_percentage_points'] - delta) < 1e-10

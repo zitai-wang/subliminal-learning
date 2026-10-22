@@ -25,6 +25,20 @@ def gpu_state():
                      map(int, line.split(',')))) for line in output.strip().splitlines()]
 
 
+def run_processes(run):
+    pids = []
+    for path in Path('/proc').iterdir():
+        if not path.name.isdigit():
+            continue
+        try:
+            argv = (path / 'cmdline').read_bytes().decode(errors='replace').split('\0')
+        except (OSError, ProcessLookupError):
+            continue
+        if any(Path(arg).name == 'subliminal_route1.py' for arg in argv if arg) and str(run) in argv:
+            pids.append(int(path.name))
+    return pids
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-dir', type=Path, required=True)
@@ -36,11 +50,17 @@ def main():
     events_path = run / 'provenance/oom_recovery_events.jsonl'
     attempts = len(events_path.read_text().splitlines()) if events_path.exists() else 0
     batch_size = 4
+    no_process_checks = 0
     while True:
         status = json.loads((run / 'status.json').read_text()) if (run / 'status.json').exists() else {}
         exit_path = run / 'pipeline_exit.json'
         now = datetime.now(timezone.utc).isoformat()
         monitor = {'checked_at': now, 'pipeline_status': status, 'oom_recoveries': attempts}
+        monitor['process_pids'] = run_processes(run)
+        no_process_checks = 0 if monitor['process_pids'] else no_process_checks + 1
+        monitor['seconds_since_status_update'] = (
+            time.time() - (run / 'status.json').stat().st_mtime
+            if (run / 'status.json').exists() else None)
         if exit_path.exists():
             exit_info = json.loads(exit_path.read_text())
             monitor['pipeline_exit'] = exit_info
@@ -113,6 +133,8 @@ def main():
                     monitor.update(state='restarted_after_oom', session=session, recovery=event)
         else:
             monitor['state'] = 'running'
+            if no_process_checks >= 3 or (monitor['seconds_since_status_update'] or 0) > 900:
+                monitor['state'] = 'needs_process_diagnosis'
         write_json(run / 'supervisor_status.json', monitor)
         print(json.dumps(monitor, ensure_ascii=False), flush=True)
         time.sleep(args.poll_seconds)
