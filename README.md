@@ -138,6 +138,14 @@ python scripts/summarize_subliminal_route1.py --run-dir "$RUN_DIR"
 
 同一运行目录会保存有效配置，并检查后续命令的配置是否一致。生成可接续已有原始记录，训练可恢复保存的训练状态，评测会跳过已有题目。
 
+无人值守运行时，可以在另一 tmux 会话中启动监控：
+
+```bash
+python scripts/watch_subliminal_route1.py --run-dir "$PWD/runs/route1_example"
+```
+
+监控每 30 秒记录状态。遇到已知 CUDA OOM 时，它检查空闲 GPU，按条件使用空闲双卡分配模型，或减小微批并保持有效 batch size 64，然后恢复流程；最多自动恢复 4 次。其他错误写入待排查状态。运行与恢复设置保存在 `supervisor_status.json` 和 `provenance/oom_recovery_events.jsonl`。
+
 ## 查看进度和结果
 
 ```bash
@@ -190,6 +198,12 @@ RUN_DIR/
 - `evaluation/`、`testbed/`、`picture_code/` 及其余脚本：保留的模型、数据、评测和可视化工具。
 
 ## 方法来源
+
+本地回归检查覆盖变长回答的梯度累积等价性、列表答案解析和最终结果汇总：
+
+```bash
+python -m pytest tests/test_subliminal_route1.py -q
+```
 
 实验思路来自 [Subliminal Learning: Language models transmit behavioral traits via hidden signals in data](https://arxiv.org/abs/2507.14805)。将数字传递扩展到 VLM 推理行为及视觉数学准确率，是本项目要验证的问题。
 

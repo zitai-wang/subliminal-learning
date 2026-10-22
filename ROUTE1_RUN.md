@@ -12,6 +12,7 @@
 - 计分：本地确定性提取与答案归一化，保留逐题原始回答，不调用外部裁判。对多选题使用选项字母或编辑距离映射；复杂答案解析仍有局限。
 - 全流程：`scripts/run_subliminal_route1_cuda2.sh RUN_DIR`，由 tmux 启动。按 `step.md` 执行：原始模型评测 → Teacher 评测 → 数字生成与过滤 → Student 训练 → Student 评测 → 结果比较。各阶段独立进程，失败即停；当前评测统一使用 batch size 4 和左侧填充，生成与训练参数不变。
 - 当前执行：`tmux attach -t sublearn_7steps_cuda2_20261023`。已保留旧任务生成的 10,304 条原始数字记录，在完成前两步后续采样。旧版代码及本次执行代码、环境版本均保存在运行目录的 `provenance/`。
+- 独立监控：`scripts/watch_subliminal_route1.py --run-dir RUN_DIR`，当前由 `sublearn_supervisor_20261023` tmux 会话运行。每 30 秒记录状态，针对 CUDA OOM 检查空闲 GPU、使用可用双卡模型分配或缩小微批后恢复，保持训练有效 batch 64；其他错误交由持续目标排查。
 - 结果：逐题回答在 `evaluation/*.jsonl`，各步骤日志在 `logs/step*.log`，实时进度在 `status.json`；七步完成后输出 `results.md` 和 `results.json`，并校验各条件的 1,000 个题目 ID、训练数据 SHA256 与 epoch 6 完成记录。
 
 这是首次流程验证。Teacher 提示能否提高视觉准确率，以及数字能否迁移该行为，均为待验证假设。Teacher 的视觉效果会完整报告；生成数字和训练 Student 不接触 MathVista。没有第二个 Teacher 的数字对照，训练前后差异不足以单独证明因果迁移。

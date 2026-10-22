@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import random
 import re
 import sys
@@ -47,11 +48,20 @@ def seed_all(seed):
 
 
 def load_model(cfg):
-    return Qwen2_5_VLForConditionalGeneration.from_pretrained(
+    placement = {'device_map': {'': 0}}
+    if os.environ.get('SUBLEARN_MODEL_PARALLEL') == '1':
+        assert torch.cuda.device_count() > 1, 'Model parallelism needs at least two visible GPUs.'
+        placement = {'device_map': 'balanced', 'max_memory': {
+            index: max(0, torch.cuda.mem_get_info(index)[0] - 2 * 1024 ** 3)
+            for index in range(torch.cuda.device_count())}}
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         cfg['model_path'], torch_dtype=torch.bfloat16,
-        attn_implementation='flash_attention_2', device_map={'': 0},
-        local_files_only=True,
+        attn_implementation='flash_attention_2', local_files_only=True, **placement,
     )
+    assert all(str(device) not in {'cpu', 'disk'}
+               for device in getattr(model, 'hf_device_map', {}).values()), \
+        'CPU/disk offload is not enabled for this training experiment.'
+    return model
 
 
 def make_number_prompt(seed, index):
@@ -214,6 +224,8 @@ def train(cfg, run):
         'supervised_tokens_per_epoch': sum(supervised_tokens(row) for row in examples),
         'loss_normalization': 'supervised tokens over each accumulation group',
         'checkpoint_optimizer_interval': 50,
+        'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
+        'device_map': {key: str(value) for key, value in model.hf_device_map.items()},
     })
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(params, lr=settings['learning_rate'],
@@ -235,10 +247,13 @@ def train(cfg, run):
         optimizer.load_state_dict(state['optimizer'])
         scheduler.load_state_dict(state['scheduler'])
         global_step = state['global_step']
-        if state.get('next_micro_step', micro_steps) < micro_steps:
+        next_sample = state.get('next_sample_offset',
+                                state.get('next_micro_step', micro_steps) * micro)
+        if next_sample < len(examples):
             start_epoch = state['epoch']
             resume_state = state
-            assert state['next_micro_step'] % accumulation == 0
+            assert next_sample % (micro * accumulation) == 0
+            resume_state['next_micro_step'] = next_sample // micro
         else:
             start_epoch = state['epoch'] + 1
         print(f'Resuming epoch {start_epoch}, global step {global_step}.', flush=True)
@@ -246,6 +261,8 @@ def train(cfg, run):
     def save_trainer_state(epoch, next_micro_step, loss_sum, token_count, elapsed):
         from peft import get_peft_model_state_dict
         state = {'epoch': epoch, 'next_micro_step': next_micro_step,
+                 'next_sample_offset': min(next_micro_step * micro, len(examples)),
+                 'micro_batch_size': micro, 'gradient_accumulation_steps': accumulation,
                  'global_step': global_step, 'loss_sum': loss_sum, 'token_count': token_count,
                  'elapsed_epoch_seconds': elapsed,
                  'adapter': {k: v.detach().cpu() for k, v in get_peft_model_state_dict(model).items()},
@@ -505,6 +522,8 @@ def main():
     write_json(run / f'provenance/{label}_execution.json', {
         'argv': sys.argv, 'source_sha256': hashlib.sha256(source).hexdigest(),
         'config': cfg, 'eval_batch_size': args.eval_batch_size if args.stage == 'evaluate' else None,
+        'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
+        'model_parallel': os.environ.get('SUBLEARN_MODEL_PARALLEL') == '1',
     })
     seed_all(cfg['seed'])
     torch.set_num_threads(4)
