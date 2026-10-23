@@ -36,7 +36,7 @@ def rescore_evaluations(run, cfg):
                for row in questions.values()), 'Unparseable dataset answer'
     changes = []
     rescored_summaries = {}
-    backup = run / 'provenance/evaluation_before_scorer_v2'
+    backup = run / 'provenance/evaluation_before_scorer_v3'
     backup.mkdir(parents=True, exist_ok=True)
     for name in CONDITIONS:
         path = run / f'evaluation/{name}.jsonl'
@@ -62,13 +62,13 @@ def rescore_evaluations(run, cfg):
         summary_path = run / f'evaluation/{name}_summary.json'
         summary = load_json(summary_path)
         summary.update(accuracy=sum(r['correct'] for r in rows) / len(rows),
-                       parser='local deterministic extraction, scorer v2; list commas preserved')
+                       parser='local deterministic extraction, scorer v3; balanced boxed answers and list commas preserved')
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n')
         rescored_summaries[name] = summary
     (run / 'summary.json').write_text(
         json.dumps(rescored_summaries, ensure_ascii=False, indent=2) + '\n')
-    (run / 'provenance/scorer_v2_changes.json').write_text(
-        json.dumps({'reason': 'Preserve list-answer commas; empty predictions remain unparsed.',
+    (run / 'provenance/scorer_v3_changes.json').write_text(
+        json.dumps({'reason': 'Preserve list-answer commas and nested boxed answers; empty predictions remain unparsed.',
                     'changes': changes}, ensure_ascii=False, indent=2) + '\n')
 
 

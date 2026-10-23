@@ -372,10 +372,21 @@ def train(cfg, run):
 
 
 def extract_answer(text):
-    # Use the same parser for baseline, prompted teacher and student.
-    boxed = re.findall(r'\\boxed\{([^}]*)\}', text)
+    # Match balanced braces, so \boxed{\text{C}} and \boxed{\frac{1}{2}}
+    # retain their complete answer. Use the same parser for every condition.
+    boxed = []
+    for match in re.finditer(r'\\boxed\{', text):
+        depth = 1
+        for index in range(match.end(), len(text)):
+            depth += (text[index] == '{') - (text[index] == '}')
+            if depth == 0:
+                boxed.append(text[match.end():index].strip())
+                break
     if boxed:
-        return boxed[-1].strip()
+        answer = boxed[-1]
+        simple_text = re.fullmatch(r'\\(?:text|mathrm|mathbf|textbf)\{(.*)\}',
+                                   answer, flags=re.DOTALL)
+        return simple_text[1].strip() if simple_text else answer
     explicit = re.findall(r'(?:Final Answer|Answer|answer)\s*[:：]\s*([^\n]+)', text)
     if explicit:
         return explicit[-1].strip()

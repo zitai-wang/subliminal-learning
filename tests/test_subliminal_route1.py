@@ -10,7 +10,7 @@ import torch
 from torch.nn import functional as F
 
 from src.subliminal_route1 import (
-    accumulation_tokens, dense_lora_dispatch, normalize_answer, supervised_tokens,
+    accumulation_tokens, dense_lora_dispatch, extract_answer, normalize_answer, supervised_tokens,
     token_normalized_loss,
 )
 
@@ -78,6 +78,15 @@ def test_lists_keep_separators_and_empty_choices_do_not_guess():
     assert normalize_answer('[0, 2, 0, 2, 1, 7, 1, 2, 0, 3, 0, 6]', row) == \
         '[0, 2, 0, 2, 1, 7, 1, 2, 0, 3, 0, 6]'
     assert normalize_answer('', {'question_type': 'multi_choice', 'choices': ['a', 'b']}) is None
+
+
+def test_nested_boxed_answer_extracts_complete_math_and_choice():
+    assert extract_answer(r'Final: \boxed{\frac{20}{3}}') == r'\frac{20}{3}'
+    choice = extract_answer(r'Final: \boxed{\text{C}}')
+    assert choice == 'C'
+    assert normalize_answer(choice, {'question_type': 'multi_choice',
+                                     'choices': ['smaller than', 'equal to', 'larger than']}) == 'larger than'
+    assert extract_answer(r'first \boxed{A}; revised \boxed{\mathrm{B}}') == 'B'
 
 
 def test_accumulation_matches_full_batch_with_variable_lengths_and_partial_group():
@@ -168,6 +177,6 @@ def test_final_report_rescores_lists_and_compares_the_same_1000_ids(tmp_path, mo
     for name, delta in (('teacher_prompt_check', 10), ('student_direct_change', 5),
                         ('student_cot_change', -2)):
         assert abs(result['comparisons'][name]['delta_percentage_points'] - delta) < 1e-10
-    changes = json.loads((tmp_path / 'provenance/scorer_v2_changes.json').read_text())
+    changes = json.loads((tmp_path / 'provenance/scorer_v3_changes.json').read_text())
     assert len(changes['changes']) == 5
     assert 'epoch 6' in (tmp_path / 'results.md').read_text()
