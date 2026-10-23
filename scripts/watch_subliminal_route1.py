@@ -37,6 +37,43 @@ def run_processes(run):
     return pids
 
 
+def failed_pipeline_log(run, status):
+    """Find the main pipeline log even while the auxiliary trainer writes logs."""
+    logs = sorted((run / 'logs').glob('step*.log'), key=lambda p: p.stat().st_mtime)
+    if not logs:
+        return None
+    stage = status.get('stage')
+    label = None
+    if stage == 'evaluate':
+        condition = status.get('condition', '')
+        if condition.startswith('baseline'):
+            label = 'step1_baseline'
+            if condition == 'baseline_cot' and status.get('completed') == 1000:
+                next_log = run / 'logs/step2_teacher.log'
+                current_log = run / 'logs/step1_baseline.log'
+                if next_log.exists() and (not current_log.exists() or
+                                          next_log.stat().st_mtime >= current_log.stat().st_mtime):
+                    label = 'step2_teacher'
+        elif condition.startswith('teacher'):
+            label = 'step2_teacher'
+            if status.get('completed') == 1000:
+                next_log = run / 'logs/step6_student.log'
+                current_log = run / 'logs/step2_teacher.log'
+                if next_log.exists() and (not current_log.exists() or
+                                          next_log.stat().st_mtime >= current_log.stat().st_mtime):
+                    label = 'step6_student'
+        elif condition.startswith('student'):
+            label = 'step6_student'
+    elif stage == 'generate':
+        label = 'step3_4_generate_filter'
+    elif stage == 'train':
+        label = 'step5_train'
+    elif stage == 'evaluations_complete':
+        label = 'step7_compare'
+    selected = run / f'logs/{label}.log' if label else None
+    return selected if selected and selected.exists() else logs[-1]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-dir', type=Path, required=True)
@@ -77,8 +114,7 @@ def main():
                 write_json(run / 'supervisor_status.json', monitor)
                 print(json.dumps(monitor), flush=True)
                 return
-            logs = sorted((run / 'logs').glob('step*.log'), key=lambda p: p.stat().st_mtime)
-            last_log = logs[-1] if logs else None
+            last_log = failed_pipeline_log(run, status)
             tail = last_log.read_text(errors='replace')[-16000:] if last_log else ''
             oom = 'out of memory' in tail.lower() or 'OutOfMemoryError' in tail
             if not oom or attempts >= 4:

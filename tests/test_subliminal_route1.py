@@ -2,7 +2,9 @@
 import copy
 import hashlib
 import json
+import os
 import sys
+from pathlib import Path
 
 import torch
 from torch.nn import functional as F
@@ -11,6 +13,24 @@ from src.subliminal_route1 import (
     accumulation_tokens, dense_lora_dispatch, normalize_answer, supervised_tokens,
     token_normalized_loss,
 )
+
+
+def test_failed_pipeline_log_ignores_concurrent_training_log(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+    from watch_subliminal_route1 import failed_pipeline_log
+    logs = tmp_path / 'logs'
+    logs.mkdir()
+    for label, mtime in [('step1_baseline', 1), ('step2_teacher', 2),
+                         ('step6_student', 3), ('step5_train', 4)]:
+        path = logs / f'{label}.log'
+        path.write_text(label)
+        os.utime(path, (mtime, mtime))
+    assert failed_pipeline_log(tmp_path, {'stage': 'evaluate', 'condition':
+                               'baseline_cot', 'completed': 900}).stem == 'step1_baseline'
+    assert failed_pipeline_log(tmp_path, {'stage': 'evaluate', 'condition':
+                               'baseline_cot', 'completed': 1000}).stem == 'step2_teacher'
+    assert failed_pipeline_log(tmp_path, {'stage': 'evaluate', 'condition':
+                               'teacher_cot', 'completed': 1000}).stem == 'step6_student'
 
 
 def test_dense_lora_trains_and_reloads_with_broken_optional_awq(tmp_path, monkeypatch):
