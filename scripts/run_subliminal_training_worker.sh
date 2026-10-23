@@ -12,7 +12,12 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 mkdir -p "$RUN_DIR/logs"
-trap 'code=$?; printf "{\"exit_code\":%s,\"finished_at\":\"%s\"}\n" "$code" "$(date -Is)" > "$RUN_DIR/training_worker_exit.json"' EXIT
+if [[ -f "$RUN_DIR/logs/step5_train.log" ]]; then
+    TRAIN_LOG_OFFSET=$(stat -c %s "$RUN_DIR/logs/step5_train.log")
+else
+    TRAIN_LOG_OFFSET=0
+fi
+trap 'code=$?; printf "{\"exit_code\":%s,\"finished_at\":\"%s\",\"log_start_bytes\":%s}\n" "$code" "$(date -Is)" "$TRAIN_LOG_OFFSET" > "$RUN_DIR/training_worker_exit.json"' EXIT
 "$PYTHON" -u scripts/wait_for_gpu.py --devices "$CUDA_VISIBLE_DEVICES" \
     --run-dir "$RUN_DIR" --status-name gpu1_training_queue.json --poll-seconds 2 \
     2>&1 | tee -a "$RUN_DIR/logs/gpu1_training_queue.log"

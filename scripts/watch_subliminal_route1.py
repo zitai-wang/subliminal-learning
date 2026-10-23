@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+from wait_for_gpu import available, gpu_snapshot
 
 
 def write_json(path, obj):
@@ -18,11 +19,7 @@ def write_json(path, obj):
 
 
 def gpu_state():
-    output = subprocess.check_output([
-        'nvidia-smi', '--query-gpu=index,memory.used,memory.total,utilization.gpu',
-        '--format=csv,noheader,nounits'], text=True)
-    return [dict(zip(('index', 'used_mib', 'total_mib', 'utilization'),
-                     map(int, line.split(',')))) for line in output.strip().splitlines()]
+    return list(gpu_snapshot().values())
 
 
 def run_processes(run):
@@ -88,8 +85,7 @@ def main():
                 monitor.update(state='needs_code_diagnosis', last_log=str(last_log))
             else:
                 cards = gpu_state()
-                idle = sorted([card for card in cards if card['used_mib'] < 2048
-                               and card['utilization'] < 15],
+                idle = sorted([card for card in cards if available(card)],
                               key=lambda card: (card['index'] != 2, card['index']))
                 if not idle:
                     monitor.update(state='waiting_for_idle_gpu', gpus=cards)
@@ -147,7 +143,57 @@ def main():
             if no_process_checks >= 3 or (monitor['seconds_since_status_update'] or 0) > 900:
                 monitor['state'] = 'needs_process_diagnosis'
             if monitor.get('training_worker_exit', {}).get('exit_code', 0) != 0:
-                monitor['state'] = 'needs_training_diagnosis'
+                offset = monitor['training_worker_exit'].get('log_start_bytes', 0)
+                tail = (run / 'logs/step5_train.log').read_bytes()[offset:][-16000:].decode(errors='replace')
+                oom = 'out of memory' in tail.lower() or 'OutOfMemoryError' in tail
+                if not oom or attempts >= 4:
+                    monitor['state'] = 'needs_training_diagnosis'
+                else:
+                    cards = gpu_state()
+                    idle = sorted([card for card in cards if available(card)],
+                                  key=lambda card: (card['index'] != 1, card['index']))
+                    cfg = yaml.safe_load(config_path.read_text())
+                    assert cfg == json.loads((run / 'config.json').read_text())
+                    before = json.loads(json.dumps(cfg))
+                    devices = None
+                    parallel = False
+                    if idle and cfg['training']['micro_batch_size'] > 1:
+                        devices = str(idle[0]['index'])
+                        cfg['training']['micro_batch_size'] //= 2
+                        cfg['training']['gradient_accumulation_steps'] *= 2
+                    elif len(idle) > 1:
+                        devices = ','.join(str(card['index']) for card in idle[:2])
+                        parallel = True
+                    if devices is None:
+                        monitor.update(state='waiting_for_idle_gpu_after_training_oom', gpus=cards)
+                    else:
+                        assert cfg['training']['micro_batch_size'] * cfg['training']['gradient_accumulation_steps'] == 64
+                        assert cfg['training']['epochs'] == cfg['evaluation']['primary_checkpoint_epoch'] == 6
+                        attempts += 1
+                        event = {'attempt': attempts, 'time': now, 'failed_log':
+                                 str(run / 'logs/step5_train.log'), 'worker': True,
+                                 'gpus': cards, 'selected_devices': devices,
+                                 'model_parallel': parallel, 'before': before, 'after': cfg}
+                        with events_path.open('a') as handle:
+                            handle.write(json.dumps(event, ensure_ascii=False) + '\n')
+                        if cfg != before:
+                            config_path.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+                            write_json(run / 'config.json', cfg)
+                        training_exit.replace(
+                            run / f'provenance/training_worker_exit_before_oom_recovery_{attempts}.json')
+                        session = f'sublearn_training_oom_recovery_{attempts}_{int(time.time())}'
+                        command = ['env', f'SUBLEARN_GPU={devices}',
+                                   f'SUBLEARN_MODEL_PARALLEL={int(parallel)}',
+                                   f'SUBLEARN_PYTHON={os.sys.executable}',
+                                   'bash', str(project / 'scripts/run_subliminal_training_worker.sh'), str(run)]
+                        subprocess.run(['tmux', 'new-session', '-d', '-s', session,
+                                        '-c', str(project), shlex.join(command)], check=True)
+                        latest = project / 'runs/latest_route1.json'
+                        info = json.loads(latest.read_text()) if latest.exists() else {}
+                        info.update(training_session=session, training_cuda=devices)
+                        write_json(latest, info)
+                        monitor.update(state='restarted_training_after_oom', session=session,
+                                       recovery=event)
         write_json(run / 'supervisor_status.json', monitor)
         print(json.dumps(monitor, ensure_ascii=False), flush=True)
         time.sleep(args.poll_seconds)
