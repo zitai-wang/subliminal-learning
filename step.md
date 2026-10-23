@@ -15,3 +15,4 @@
 
 跨数据集复核（后续实验，不计入上述七步）：
    复用同一份纯数字训练数据和固定 epoch 6 Student，在 MathVision `testmini` 304 题上重新执行原始模型 direct/CoT、Teacher CoT、Student direct/CoT 评测。该复核不重新训练，以便只改变评测数据集。
+   同样在 ScienceQA、MMMU、ChartQA、MMBench、MathVerse 和 MMStar 上使用全部有答案的评测 split，执行相同五条件评测；direct 为 512 tokens，CoT 为 2048 tokens，均使用 greedy decoding。

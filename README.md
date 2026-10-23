@@ -212,12 +212,28 @@ SUBLEARN_GPU=1 bash scripts/run_subliminal_mathvision.sh \
 
 MathVision 配置位于 `src/config/subliminal_mathvision.yaml`。评测沿用 direct 512 / CoT 2048、greedy decoding 和 batch size 4；选择题使用确定性的选项映射，开放题使用 boxed 答案提取及符号等价判断，不调用远程裁判。结果保存在新运行目录的 `results.md`、`results.json` 和 `evaluation/*.jsonl`。
 
+## 多基准交叉数据集复核
+
+还可以在 ScienceQA、MMMU、ChartQA、MMBench、MathVerse 和 MMStar 上复用同一份数字训练数据与固定 epoch 6 Student。各基准使用全部有答案的评测 split：ScienceQA test 4,241 题、MMMU validation 900 题、ChartQA test 2,500 题、MMBench dev 4,377 题、MathVerse testmini 3,940 题、MMStar val 1,500 题。所有条件仍使用 greedy decoding，direct 上限 512 tokens，CoT 上限 2048 tokens。
+
+GPU 队列会在指定显卡连续两次被检测为空闲后领取下一个数据集；单次 OOM 或运行失败会以 batch size 2 自动续跑一次，已有 JSONL 行会被保留并跳过：
+
+```bash
+python -u scripts/run_subliminal_benchmark_queue.py \
+  --run-root "$PWD/runs/cross_dataset_suite" \
+  --gpus 0,1,2,3
+```
+
+每个子目录都会生成五种条件的逐题输出、日志、`results.md`、`results.json` 和配对 bootstrap 区间。配置位于 `src/config/subliminal_{scienceqa,mmmu,chartqa,mmbench,mathverse,mmstar}.yaml`，统一执行器与汇总器分别是 `src/subliminal_mcq.py` 和 `scripts/summarize_subliminal_mcq.py`。
+
 ## 代码组织
 
 - [src/subliminal_route1.py](src/subliminal_route1.py)：当前路线一的生成、训练和评测入口。
 - [src/config/subliminal_route1.yaml](src/config/subliminal_route1.yaml)：提示与实验参数。
 - [scripts/run_subliminal_route1_cuda2.sh](scripts/run_subliminal_route1_cuda2.sh)：七步流水线。
 - [scripts/summarize_subliminal_route1.py](scripts/summarize_subliminal_route1.py)：结果校验、统一计分与汇总。
+- [src/subliminal_mcq.py](src/subliminal_mcq.py)：六个跨数据集基准的统一抽样、提示、推理与确定性评分入口。
+- [scripts/run_subliminal_benchmark_queue.py](scripts/run_subliminal_benchmark_queue.py)：共享 GPU 环境下的可恢复多基准队列。
 - `evaluation/`、`testbed/`、`picture_code/` 及其余脚本：保留的模型、数据、评测和可视化工具。
 
 ## 方法来源

@@ -1,0 +1,22 @@
+dataset_name: MMStar
+dataset_format: mmstar
+dataset_path: /data/share/MMStar/mmstar.parquet
+model_path: /data/share/Qwen2.5-VL-7B-Instruct
+source_run: /data1/wzy/sub-learn/runs/route1_cuda2_20261023_budget2048
+student_adapter_path: /data1/wzy/sub-learn/runs/route1_cuda2_20261023_budget2048/checkpoints/epoch_06
+source_training_epoch: 6
+seed: 42
+student_system: You are a helpful assistant.
+teacher_system: >-
+  You are a careful and rigorous reasoner. You enjoy solving difficult problems
+  and checking your reasoning. For visual questions, inspect the visual evidence
+  before drawing conclusions. For reasoning questions, think step by step and
+  verify the final answer. Always follow the user's requested output format.
+evaluation:
+  split: val
+  source_samples: 1500
+  expected_samples: 1500
+  max_pixels: 1003520
+  min_pixels: 3136
+  direct_max_new_tokens: 512
+  cot_max_new_tokens: 2048
