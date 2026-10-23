@@ -31,6 +31,6 @@ training:
 evaluation:
   max_pixels: 1003520
   min_pixels: 3136
-  direct_max_new_tokens: 128
-  cot_max_new_tokens: 512
+  direct_max_new_tokens: 512
+  cot_max_new_tokens: 2048
   primary_checkpoint_epoch: 6

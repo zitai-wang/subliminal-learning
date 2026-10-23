@@ -59,13 +59,15 @@ Student 训练数据只保留 `id`、`user`、`assistant`。目标 Teacher 的�
 
 | 条件 | 模型 | 系统提示 | 输出要求 | 最大新 token |
 |---|---|---|---|---:|
-| `baseline_direct` | 原始模型 | 普通助手提示 | 只输出最终答案 | 128 |
-| `baseline_cot` | 原始模型 | 普通助手提示 | 分步推理及最终答案 | 512 |
-| `teacher_cot` | 原始模型 | 目标推理行为提示 | 分步推理及最终答案 | 512 |
-| `student_direct` | 原始模型 + epoch 6 LoRA | 普通助手提示 | 只输出最终答案 | 128 |
-| `student_cot` | 原始模型 + epoch 6 LoRA | 普通助手提示 | 分步推理及最终答案 | 512 |
+| `baseline_direct` | 原始模型 | 普通助手提示 | 只输出最终答案 | 512 |
+| `baseline_cot` | 原始模型 | 普通助手提示 | 分步推理及最终答案 | 2048 |
+| `teacher_cot` | 原始模型 | 目标推理行为提示 | 分步推理及最终答案 | 2048 |
+| `student_direct` | 原始模型 + epoch 6 LoRA | 普通助手提示 | 只输出最终答案 | 512 |
+| `student_cot` | 原始模型 + epoch 6 LoRA | 普通助手提示 | 分步推理及最终答案 | 2048 |
 
 各组使用 greedy 解码；当前评测 batch size 为 4，采用左侧填充。所有逐题原始回答均保存到 JSONL。
+
+用户在查看初轮评测及截断诊断后，将 direct/CoT 上限从 128/512 改为 512/2048。新预算使用独立运行目录重跑全部评测，旧结果保留；数字数据与六轮训练设置不变。这是同一评测集上的后续实验，报告保留协议修订记录。
 
 计分使用本地确定性答案提取与归一化，不调用外部裁判。最终汇总会统一重新计分、检查 1,000 个题目 ID 是否一致，并保留计分修正记录。复杂 LaTeX 或不遵循输出格式的回答仍可能无法正确提取，因此报告应注明本地计分口径。
 
@@ -97,6 +99,8 @@ mathvista_parquet: /path/to/mathvista/testmini.parquet
 
 模型加载使用 `local_files_only=True`；运行脚本也开启了 Hugging Face 离线模式。模型和数据需要提前准备。
 
+当前环境的 AutoAWQ 与 Transformers 不兼容。BF16 路线在 LoRA 创建和加载时跳过 PEFT 对 AutoAWQ 的无用探测，继续使用标准稠密 Linear LoRA；已用小模型验证训练、保存及重载一致性。
+
 ## 运行完整流程
 
 从项目根目录执行。`RUN_DIR` 应为本次实验独立的输出目录：
@@ -106,7 +110,7 @@ SUBLEARN_PYTHON=python SUBLEARN_GPU=2 \
   bash scripts/run_subliminal_route1_cuda2.sh "$PWD/runs/route1_example"
 ```
 
-可以通过环境变量选择 Python、物理 GPU 编号及评测 batch size；默认 Python 为本机 `licv` 环境，默认 GPU 为 2，默认评测 batch size 为 4。
+可以通过环境变量选择 Python、物理 GPU 编号及评测 batch size；默认 Python 为本机 `licv` 环境，默认 GPU 为 2，默认评测 batch size 为 4。启动前默认每 15 秒检查指定 GPU，确认没有计算进程后才加载模型。`SUBLEARN_GPU_POLL_SECONDS=2` 可将检查间隔改为 2 秒。等待状态保存在 `status.json`。
 
 ```bash
 export SUBLEARN_PYTHON=/path/to/python
@@ -137,6 +141,14 @@ python scripts/summarize_subliminal_route1.py --run-dir "$RUN_DIR"
 ```
 
 同一运行目录会保存有效配置，并检查后续命令的配置是否一致。生成可接续已有原始记录，训练可恢复保存的训练状态，评测会跳过已有题目。
+
+已有完整数字训练数据时，可在另一张空闲卡并行训练，主流水线仍执行评测：
+
+```bash
+SUBLEARN_GPU=1 bash scripts/run_subliminal_training_worker.sh "$PWD/runs/route1_example"
+```
+
+训练进程每 2 秒检查指定 GPU，空闲后开始。文件锁保证同一运行只训练一次；主流水线到达训练步骤时等待已有训练完成，再使用 epoch 6 评测。独立训练进度在 `training_status.json`，等待状态在 `gpu1_training_queue.json`。
 
 无人值守运行时，可以在另一 tmux 会话中启动监控：
 
@@ -199,7 +211,7 @@ RUN_DIR/
 
 ## 方法来源
 
-本地回归检查覆盖变长回答的梯度累积等价性、列表答案解析和最终结果汇总：
+本地回归检查覆盖 LoRA 的训练/保存/重载、变长回答的梯度累积等价性、列表答案解析和最终结果汇总：
 
 ```bash
 python -m pytest tests/test_subliminal_route1.py -q

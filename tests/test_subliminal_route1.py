@@ -8,8 +8,48 @@ import torch
 from torch.nn import functional as F
 
 from src.subliminal_route1 import (
-    accumulation_tokens, normalize_answer, supervised_tokens, token_normalized_loss,
+    accumulation_tokens, dense_lora_dispatch, normalize_answer, supervised_tokens,
+    token_normalized_loss,
 )
+
+
+def test_dense_lora_trains_and_reloads_with_broken_optional_awq(tmp_path, monkeypatch):
+    from peft import LoraConfig, PeftModel, get_peft_model
+    from peft.tuners.lora import model as lora_backend
+    from transformers import Qwen2Config, Qwen2ForCausalLM
+
+    def broken_awq(*args, **kwargs):
+        raise ImportError('Incompatible optional AutoAWQ')
+
+    monkeypatch.setattr(lora_backend, 'dispatch_awq', broken_awq)
+    torch.manual_seed(42)
+    base = Qwen2ForCausalLM(Qwen2Config(
+        vocab_size=32, hidden_size=16, intermediate_size=32,
+        num_hidden_layers=1, num_attention_heads=2, num_key_value_heads=2))
+    fresh = copy.deepcopy(base)
+    config = LoraConfig(r=2, lora_alpha=4, lora_dropout=0,
+                        target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj'],
+                        task_type='CAUSAL_LM')
+    with dense_lora_dispatch(base):
+        model = get_peft_model(base, config)
+    assert lora_backend.dispatch_awq is broken_awq
+    inputs = torch.tensor([[1, 2, 3, 4]])
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=0.01)
+    loss = model(input_ids=inputs, labels=inputs).loss
+    assert torch.isfinite(loss)
+    loss.backward()
+    optimizer.step()
+    assert any(p.detach().count_nonzero() > 0 for n, p in model.named_parameters() if 'lora_B' in n)
+    model.eval()
+    with torch.no_grad():
+        expected = model(input_ids=inputs).logits
+    model.save_pretrained(tmp_path, safe_serialization=True)
+    with dense_lora_dispatch(fresh):
+        restored = PeftModel.from_pretrained(fresh, tmp_path).eval()
+    with torch.no_grad():
+        actual = restored(input_ids=inputs).logits
+    torch.testing.assert_close(actual, expected)
+    assert lora_backend.dispatch_awq is broken_awq
 
 
 def test_lists_keep_separators_and_empty_choices_do_not_guess():

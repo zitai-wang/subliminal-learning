@@ -34,7 +34,8 @@ def run_processes(run):
             argv = (path / 'cmdline').read_bytes().decode(errors='replace').split('\0')
         except (OSError, ProcessLookupError):
             continue
-        if any(Path(arg).name == 'subliminal_route1.py' for arg in argv if arg) and str(run) in argv:
+        if any(Path(arg).name in {'subliminal_route1.py', 'wait_for_gpu.py'}
+               for arg in argv if arg) and str(run) in argv:
             pids.append(int(path.name))
     return pids
 
@@ -61,6 +62,15 @@ def main():
         monitor['seconds_since_status_update'] = (
             time.time() - (run / 'status.json').stat().st_mtime
             if (run / 'status.json').exists() else None)
+        training_status = run / 'training_status.json'
+        if training_status.exists():
+            monitor['parallel_training'] = json.loads(training_status.read_text())
+            monitor['seconds_since_status_update'] = min(
+                monitor['seconds_since_status_update'] or float('inf'),
+                time.time() - training_status.stat().st_mtime)
+        training_exit = run / 'training_worker_exit.json'
+        if training_exit.exists():
+            monitor['training_worker_exit'] = json.loads(training_exit.read_text())
         if exit_path.exists():
             exit_info = json.loads(exit_path.read_text())
             monitor['pipeline_exit'] = exit_info
@@ -132,9 +142,12 @@ def main():
                     write_json(latest, info)
                     monitor.update(state='restarted_after_oom', session=session, recovery=event)
         else:
-            monitor['state'] = 'running'
+            monitor['state'] = ('waiting_for_gpu' if status.get('stage') == 'waiting_for_gpu'
+                                else 'running')
             if no_process_checks >= 3 or (monitor['seconds_since_status_update'] or 0) > 900:
                 monitor['state'] = 'needs_process_diagnosis'
+            if monitor.get('training_worker_exit', {}).get('exit_code', 0) != 0:
+                monitor['state'] = 'needs_training_diagnosis'
         write_json(run / 'supervisor_status.json', monitor)
         print(json.dumps(monitor, ensure_ascii=False), flush=True)
         time.sleep(args.poll_seconds)

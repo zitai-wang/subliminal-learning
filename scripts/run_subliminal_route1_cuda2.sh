@@ -17,6 +17,10 @@ cp src/subliminal_route1.py "$RUN_DIR/provenance/subliminal_route1_execution.py"
 cp scripts/run_subliminal_route1_cuda2.sh "$RUN_DIR/provenance/run_subliminal_route1_execution.sh"
 trap 'code=$?; printf "{\"exit_code\":%s,\"finished_at\":\"%s\"}\n" "$code" "$(date -Is)" > "$RUN_DIR/pipeline_exit.json"' EXIT
 
+if [[ ${SUBLEARN_WAIT_FOR_GPU:-1} == 1 ]]; then
+    "$PYTHON" -u scripts/wait_for_gpu.py --devices "$CUDA_VISIBLE_DEVICES" --run-dir "$RUN_DIR" --poll-seconds "${SUBLEARN_GPU_POLL_SECONDS:-15}" 2>&1 | tee -a "$RUN_DIR/logs/gpu_wait.log"
+fi
+
 run_stage() {
     local label=$1
     shift

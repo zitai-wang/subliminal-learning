@@ -133,18 +133,23 @@ def main():
                               'regressed_questions': int(counts[0])}
     teacher_gain = comparisons['teacher_prompt_check']['delta_percentage_points']
     interpretation = (
-        'Teacher 的 CoT 准确率高于同提示预算下的 baseline CoT；Student 的变化见配对比较。'
+        'Teacher 的 CoT 准确率高于同生成预算下的 baseline CoT；Student 的变化见配对比较。'
         if teacher_gain > 0 else
         'Teacher 未建立相对 baseline CoT 的准确率优势，因此本轮不能检验已验证的 Teacher 优势是否传递。'
     )
     report = {'run_dir': str(run), 'completed_at': datetime.now(timezone.utc).isoformat(),
               'steps_completed': list(range(1, 8)), 'generation': generation,
+              'evaluation_protocol': cfg['evaluation'],
               'training': training, 'metrics': metrics, 'comparisons': comparisons,
               'interpretation': interpretation,
               'limits': ['Single training seed; no neutral-teacher numeric-data control.',
                          'Custom deterministic local answer extraction; no external judge.',
                          'Question bootstrap intervals describe this evaluation set, not variation across training runs.',
                          'Accuracy changes alone do not establish causal subliminal transfer.']}
+    amendment = run / 'provenance/user_token_budget_amendment.json'
+    if amendment.exists():
+        report['protocol_amendment'] = load_json(amendment)
+        report['limits'].append('Token budgets were revised after inspecting the initial evaluation; this is a follow-up on the same test set.')
     (run / 'results.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     lines = ['## Material Passport', '', '- Origin Skill: academic-research-suite / experiment-agent',
              '- Origin Mode: run', '- Verification Status: UNVERIFIED (no independent rerun)',
@@ -165,6 +170,10 @@ def main():
               '这是单 seed 的流程验证，没有中性 Teacher 数字训练对照；分数变化不足以单独证明因果迁移。',
               '所有条件使用相同的本地确定性答案提取与归一化；逐题原始回答保存在 evaluation/。',
               '区间仅反映本评测集的问题抽样差异，不能表示训练 seed 之间的变化，也未作多重比较校正。', '']
+    if 'direct_max_new_tokens' in cfg['evaluation']:
+        lines += [f'生成上限：direct {cfg["evaluation"]["direct_max_new_tokens"]} tokens，CoT {cfg["evaluation"]["cot_max_new_tokens"]} tokens。', '']
+    if amendment.exists():
+        lines += ['生成预算是在查看初轮评测及截断情况后依用户要求修改的；本报告属于同一评测集上的后续实验，旧结果与修订记录均已保留。', '']
     (run / 'results.md').write_text('\n'.join(lines))
     (run / 'status.json').write_text(json.dumps({'stage': 'complete', 'steps_completed': list(range(1, 8))}, indent=2) + '\n')
     print('\n'.join(lines), flush=True)

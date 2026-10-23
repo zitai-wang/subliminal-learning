@@ -5,6 +5,7 @@ All inference is local; MathVista is never loaded by generation or training.
 """
 import argparse
 import ast
+import fcntl
 import hashlib
 import io
 import json
@@ -14,6 +15,7 @@ import random
 import re
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import torch
@@ -185,6 +187,25 @@ def token_normalized_loss(loss, micro_tokens, group_tokens):
     return loss * (micro_tokens / group_tokens)
 
 
+@contextmanager
+def dense_lora_dispatch(model):
+    """Avoid PEFT 0.14's eager AutoAWQ probe for this unquantized model.
+
+    The installed optional AutoAWQ package is incompatible with Transformers.
+    Both adapter creation and loading need this guard; installed packages and
+    PEFT's normal dense Linear implementation remain unchanged.
+    """
+    from peft.tuners.lora import model as lora_backend
+    assert not getattr(model, 'is_quantized', False), 'This guard is only for dense models.'
+    assert getattr(model.config, 'quantization_config', None) is None
+    original = lora_backend.dispatch_awq
+    lora_backend.dispatch_awq = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        lora_backend.dispatch_awq = original
+
+
 def train(cfg, run):
     from peft import LoraConfig, get_peft_model
     from transformers import get_linear_schedule_with_warmup
@@ -208,7 +229,8 @@ def train(cfg, run):
     lora = LoraConfig(r=settings['lora_rank'], lora_alpha=settings['lora_alpha'],
                       lora_dropout=settings['lora_dropout'], target_modules=targets,
                       bias='none', task_type='CAUSAL_LM')
-    model = get_peft_model(model, lora)
+    with dense_lora_dispatch(model):
+        model = get_peft_model(model, lora)
     model.config.use_cache = False
     model.enable_input_require_grads()
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
@@ -331,7 +353,9 @@ def train(cfg, run):
                               'elapsed_epoch_seconds': elapsed_before_resume + time.monotonic() - started,
                               'peak_memory_mib': torch.cuda.max_memory_allocated() / 1024 ** 2}
                     append_row(run / 'train_metrics.jsonl', status)
-                    write_json(run / 'status.json', status)
+                    write_json(run / 'training_status.json', status)
+                    if os.environ.get('SUBLEARN_AUXILIARY_TRAINING') != '1':
+                        write_json(run / 'status.json', status)
                     print(json.dumps(status), flush=True)
                 if global_step % 50 == 0 and step + 1 < micro_steps:
                     save_trainer_state(epoch, step + 1, loss_sum, token_count,
@@ -422,7 +446,8 @@ def evaluate(cfg, run, conditions=None, batch_size=4):
     for name in names:
         student, cot = EVALUATION_CONDITIONS[name]
         if student and not adapter_loaded:
-            model = PeftModel.from_pretrained(model, run / f'checkpoints/epoch_{epoch:02d}').eval()
+            with dense_lora_dispatch(model):
+                model = PeftModel.from_pretrained(model, run / f'checkpoints/epoch_{epoch:02d}').eval()
             adapter_loaded = True
         path = run / f'evaluation/{name}.jsonl'
         previous = read_rows(path)
@@ -515,6 +540,20 @@ def main():
         assert json.loads(effective.read_text()) == cfg, 'Config differs from existing run.'
     else:
         write_json(effective, cfg)
+    if args.stage == 'train':
+        # An auxiliary GPU may train while the main GPU evaluates. The main
+        # pipeline waits here, then reuses the completed adapter without training twice.
+        with (run / 'checkpoints/training.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if (run / f'checkpoints/epoch_{cfg["training"]["epochs"]:02d}/complete.json').exists():
+                print('Training already complete.', flush=True)
+                return
+            execute_stage(args, cfg, run)
+    else:
+        execute_stage(args, cfg, run)
+
+
+def execute_stage(args, cfg, run):
     label = args.stage + ('_' + '_'.join(args.conditions) if args.conditions else '')
     source = Path(__file__).read_bytes()
     (run / 'provenance').mkdir(exist_ok=True)
