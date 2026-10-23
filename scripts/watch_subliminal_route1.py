@@ -144,7 +144,9 @@ def main():
                 monitor['state'] = 'needs_process_diagnosis'
             if monitor.get('training_worker_exit', {}).get('exit_code', 0) != 0:
                 offset = monitor['training_worker_exit'].get('log_start_bytes', 0)
-                tail = (run / 'logs/step5_train.log').read_bytes()[offset:][-16000:].decode(errors='replace')
+                training_log = run / 'logs/step5_train.log'
+                tail = (training_log.read_bytes()[offset:][-16000:].decode(errors='replace')
+                        if training_log.exists() else '')
                 oom = 'out of memory' in tail.lower() or 'OutOfMemoryError' in tail
                 if not oom or attempts >= 4:
                     monitor['state'] = 'needs_training_diagnosis'
