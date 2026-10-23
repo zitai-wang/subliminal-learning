@@ -12,3 +12,6 @@
    用与原始模型相同的提示和设置，跑完整 MathVista，不添加 Teacher 的目标提示。
 7. Step 7：比较结果
    比较 原始模型、目标 Teacher、数字训练后的 Student，看 Teacher 的优势是否能通过数字训练传递给 Student。
+
+跨数据集复核（后续实验，不计入上述七步）：
+   复用同一份纯数字训练数据和固定 epoch 6 Student，在 MathVision `testmini` 304 题上重新执行原始模型 direct/CoT、Teacher CoT、Student direct/CoT 评测。该复核不重新训练，以便只改变评测数据集。

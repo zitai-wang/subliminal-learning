@@ -201,6 +201,17 @@ RUN_DIR/
 
 本机当前运行位置可查看 `runs/latest_route1.json`。运行数据、日志、检查点、权重、缓存与本地凭据由 `.gitignore` 排除，不随代码上传。
 
+## MathVision 跨数据集评测
+
+完成 MathVista 主实验后，可以复用完全相同的数字训练数据和 epoch 6 Student，在 MathVision `testmini` split（304 题）上评测五个条件。这样只改变评测集，不重新训练 Student，能够检查阴性结果是否依赖 MathVista。
+
+```bash
+SUBLEARN_GPU=1 bash scripts/run_subliminal_mathvision.sh \
+  "$PWD/runs/mathvision_example"
+```
+
+MathVision 配置位于 `src/config/subliminal_mathvision.yaml`。评测沿用 direct 512 / CoT 2048、greedy decoding 和 batch size 4；选择题使用确定性的选项映射，开放题使用 boxed 答案提取及符号等价判断，不调用远程裁判。结果保存在新运行目录的 `results.md`、`results.json` 和 `evaluation/*.jsonl`。
+
 ## 代码组织
 
 - [src/subliminal_route1.py](src/subliminal_route1.py)：当前路线一的生成、训练和评测入口。
