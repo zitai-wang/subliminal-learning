@@ -216,7 +216,7 @@ MathVision 配置位于 `src/config/subliminal_mathvision.yaml`。评测沿用 d
 
 还可以在 ScienceQA、MMMU、ChartQA、MMBench、MathVerse 和 MMStar 上复用同一份数字训练数据与固定 epoch 6 Student。各基准使用全部有答案的评测 split：ScienceQA test 4,241 题、MMMU validation 900 题、ChartQA test 2,500 题、MMBench dev 4,377 题、MathVerse testmini 3,940 题、MMStar val 1,500 题。所有条件仍使用 greedy decoding，direct 上限 512 tokens，CoT 上限 2048 tokens。
 
-GPU 队列会在指定显卡连续两次被检测为空闲后领取下一个数据集；单次 OOM 或运行失败会以 batch size 2 自动续跑一次，已有 JSONL 行会被保留并跳过：
+GPU 队列每秒检查指定显卡；一旦发现空闲即领取下一个数据集。单次 OOM 或运行失败会以 batch size 2 自动续跑一次，已有 JSONL 行会被保留并跳过：
 
 ```bash
 python -u scripts/run_subliminal_benchmark_queue.py \

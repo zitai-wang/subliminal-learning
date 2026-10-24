@@ -101,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-root', type=Path, required=True)
     parser.add_argument('--gpus', default='0,1,2,3')
-    parser.add_argument('--poll-seconds', type=int, default=10)
+    parser.add_argument('--poll-seconds', type=int, default=1)
     args = parser.parse_args()
     run_root = args.run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
@@ -139,7 +139,7 @@ def main():
                     exit_code = 1
 
             for gpu in gpus:
-                if not pending or gpu in active or free_streak[gpu] < 2:
+                if not pending or gpu in active or free_streak[gpu] < 1:
                     continue
                 dataset = pending.pop(0)
                 attempts[dataset] += 1
