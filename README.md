@@ -226,6 +226,25 @@ python -u scripts/run_subliminal_benchmark_queue.py \
 
 每个子目录都会生成五种条件的逐题输出、日志、`results.md`、`results.json` 和配对 bootstrap 区间。配置位于 `src/config/subliminal_{scienceqa,mmmu,chartqa,mmbench,mathverse,mmstar}.yaml`，统一执行器与汇总器分别是 `src/subliminal_mcq.py` 和 `scripts/summarize_subliminal_mcq.py`。
 
+## 筛选式过程蒸馏对照
+
+纯数字训练未得到稳定增益后，项目增加一个显式过程蒸馏上限对照。候选题只来自 ScienceQA train，和最终 ScienceQA test 及其他基准评测集隔离。原始模型先直接回答全部训练题；Teacher CoT 只运行 direct 错题。数据筛选要求 Teacher 正确、输出正常结束、包含 boxed 最终答案且不超过 1,024 个新 token，再按学科均衡选择最多 500 条。
+
+Student 仍从相同原始基座开始，使用普通助手系统提示，以题目、图像和 Teacher 的完整正确推理作为监督，训练语言 decoder attention LoRA；视觉模块冻结。训练固定 6 轮，保存 epoch 1、3、6。该条件包含显式题目与推理，因此属于过程蒸馏对照，不能作为纯 subliminal learning 的因果证据。
+
+无人值守队列会等待旧版六基准评测全部完成，然后自动执行候选生成、筛选、训练，并用新 epoch 6 adapter 在六个基准上重跑五条件评测：
+
+```bash
+python -u scripts/run_selected_process_distillation_queue.py \
+  --primary-run-root "$PWD/runs/cross_dataset_suite" \
+  --run-dir "$PWD/runs/selected_process_scienceqa_train" \
+  --eval-run-root "$PWD/runs/selected_process_cross_dataset" \
+  --gpus 0,1,2,3 \
+  --max-samples 500
+```
+
+训练配置位于 `src/config/selected_process_training.yaml`。筛选清单、训练状态、checkpoint 和六基准结果分别保存在上述两个运行目录；队列遇到候选推理或训练失败会等待空卡后自动重试一次。
+
 ## 代码组织
 
 - [src/subliminal_route1.py](src/subliminal_route1.py)：当前路线一的生成、训练和评测入口。
@@ -234,6 +253,9 @@ python -u scripts/run_subliminal_benchmark_queue.py \
 - [scripts/summarize_subliminal_route1.py](scripts/summarize_subliminal_route1.py)：结果校验、统一计分与汇总。
 - [src/subliminal_mcq.py](src/subliminal_mcq.py)：六个跨数据集基准的统一抽样、提示、推理与确定性评分入口。
 - [scripts/run_subliminal_benchmark_queue.py](scripts/run_subliminal_benchmark_queue.py)：共享 GPU 环境下的可恢复多基准队列。
+- [scripts/prepare_selected_distillation.py](scripts/prepare_selected_distillation.py)：构建最多 500 条高信号过程蒸馏数据。
+- [src/train_selected_process_distillation.py](src/train_selected_process_distillation.py)：图文 Teacher 过程的多模态 LoRA 训练入口。
+- [scripts/run_selected_process_distillation_queue.py](scripts/run_selected_process_distillation_queue.py)：从筛选、训练到六基准复测的自动队列。
 - `evaluation/`、`testbed/`、`picture_code/` 及其余脚本：保留的模型、数据、评测和可视化工具。
 
 ## 方法来源

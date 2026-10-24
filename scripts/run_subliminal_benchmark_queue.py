@@ -57,7 +57,8 @@ def completed(run_dir):
     return status.exists() and json.loads(status.read_text()).get('stage') == 'complete'
 
 
-def launch(dataset, gpu, run_root, attempt):
+def launch(dataset, gpu, run_root, attempt, student_adapter_path=None,
+           source_training_epoch=None, source_run=None):
     run_dir = run_root / dataset
     (run_dir / 'logs').mkdir(parents=True, exist_ok=True)
     config = ROOT / 'src/config' / f'subliminal_{dataset}.yaml'
@@ -70,6 +71,12 @@ def launch(dataset, gpu, run_root, attempt):
     command = [PYTHON, '-u', str(ROOT / 'src/subliminal_mcq.py'), 'evaluate',
                '--config', str(config), '--run-dir', str(run_dir),
                '--eval-batch-size', str(batch_size)]
+    if student_adapter_path:
+        command.extend(['--student-adapter-path', str(student_adapter_path)])
+    if source_training_epoch is not None:
+        command.extend(['--source-training-epoch', str(source_training_epoch)])
+    if source_run:
+        command.extend(['--source-run', str(source_run)])
     process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=log,
                                stderr=subprocess.STDOUT, start_new_session=True)
     return {'dataset': dataset, 'gpu': gpu, 'attempt': attempt, 'pid': process.pid,
@@ -102,6 +109,9 @@ def main():
     parser.add_argument('--run-root', type=Path, required=True)
     parser.add_argument('--gpus', default='0,1,2,3')
     parser.add_argument('--poll-seconds', type=float, default=0.25)
+    parser.add_argument('--student-adapter-path', type=Path)
+    parser.add_argument('--source-training-epoch', type=int)
+    parser.add_argument('--source-run', type=Path)
     args = parser.parse_args()
     run_root = args.run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
@@ -143,7 +153,9 @@ def main():
                     continue
                 dataset = pending.pop(0)
                 attempts[dataset] += 1
-                worker = launch(dataset, gpu, run_root, attempts[dataset])
+                worker = launch(dataset, gpu, run_root, attempts[dataset],
+                                args.student_adapter_path, args.source_training_epoch,
+                                args.source_run)
                 active[gpu] = worker
                 free_streak[gpu] = 0
                 print(f"{now()} started {dataset} on GPU {gpu} pid={worker['pid']}", flush=True)

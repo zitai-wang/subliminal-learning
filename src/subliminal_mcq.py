@@ -244,11 +244,11 @@ def build_query(row, instruction, dataset_format, cot=False):
     return '\n'.join(parts)
 
 
-def evaluate(cfg, run, conditions=None, batch_size=4):
+def evaluate(cfg, run, conditions=None, batch_size=4, incorrect_ids_from=None):
     from peft import PeftModel
 
     rows = load_selected_rows(cfg)
-    expected_ids = {row['_id'] for row in rows}
+    all_expected_ids = {row['_id'] for row in rows}
     processor = AutoProcessor.from_pretrained(
         cfg['model_path'], local_files_only=True,
         min_pixels=cfg['evaluation']['min_pixels'], max_pixels=cfg['evaluation']['max_pixels'])
@@ -266,9 +266,23 @@ def evaluate(cfg, run, conditions=None, batch_size=4):
         'direct_max_new_tokens': cfg['evaluation']['direct_max_new_tokens'],
         'cot_max_new_tokens': cfg['evaluation']['cot_max_new_tokens'],
         'student_adapter_path': cfg['student_adapter_path'],
+        'incorrect_ids_from': incorrect_ids_from,
     })
     adapter_loaded = False
     for name in names:
+        condition_rows = rows
+        selection_note = 'all configured rows'
+        if incorrect_ids_from and name != incorrect_ids_from:
+            source_path = run / f'evaluation/{incorrect_ids_from}.jsonl'
+            source_rows = read_rows(source_path)
+            source_by_id = {str(row['id']): row for row in source_rows}
+            assert set(source_by_id) == all_expected_ids, \
+                f'{incorrect_ids_from} must be complete before filtered conditions.'
+            incorrect_ids = {item_id for item_id, item in source_by_id.items()
+                             if not bool(item['correct'])}
+            condition_rows = [row for row in rows if row['_id'] in incorrect_ids]
+            selection_note = f'only {incorrect_ids_from} incorrect rows'
+        expected_ids = {row['_id'] for row in condition_rows}
         student, cot = EVALUATION_CONDITIONS[name]
         if student and not adapter_loaded:
             with dense_lora_dispatch(model):
@@ -286,7 +300,7 @@ def evaluate(cfg, run, conditions=None, batch_size=4):
         limit = cfg['evaluation']['cot_max_new_tokens' if cot else 'direct_max_new_tokens']
         instruction = ('Reason step by step, and put only the final option letter within \\boxed{}.'
                        if cot else 'Give only the final option letter within \\boxed{}, without explanation.')
-        remaining = [row for row in rows if row['_id'] not in done]
+        remaining = [row for row in condition_rows if row['_id'] not in done]
         for offset in range(0, len(remaining), batch_size):
             batch = remaining[offset:offset + batch_size]
             texts, images = [], []
@@ -327,17 +341,18 @@ def evaluate(cfg, run, conditions=None, batch_size=4):
                 count += 1
             elapsed = max(time.monotonic() - started, 0.001)
             status = {'stage': 'evaluate', 'dataset': cfg['dataset_name'], 'condition': name,
-                      'completed': count, 'total': len(rows), 'accuracy': correct / count,
+                      'completed': count, 'total': len(condition_rows), 'accuracy': correct / count,
                       'elapsed_seconds': elapsed,
                       'new_samples_per_second': (count - initial_count) / elapsed}
             write_json(run / f'status_{name}.json', status)
-            if count % 20 < batch_size or count == len(rows):
+            if count % 20 < batch_size or count == len(condition_rows):
                 print(json.dumps(status), flush=True)
             del output, new_ids, inputs
         write_json(run / f'evaluation/{name}_summary.json', {
             'condition': name, 'samples': count, 'accuracy': correct / count,
             'max_new_tokens': limit, 'greedy': True, 'batch_size': batch_size,
             'epoch': cfg['source_training_epoch'] if student else None,
+            'row_selection': selection_note,
             'parser': 'deterministic boxed MCQ letter extraction; no remote judge',
         })
     print(json.dumps({name: json.loads((run / f'evaluation/{name}_summary.json').read_text())
@@ -352,8 +367,18 @@ def main():
     parser.add_argument('--run-dir', required=True)
     parser.add_argument('--conditions', nargs='+', choices=list(EVALUATION_CONDITIONS))
     parser.add_argument('--eval-batch-size', type=int, default=4)
+    parser.add_argument('--incorrect-ids-from', choices=list(EVALUATION_CONDITIONS))
+    parser.add_argument('--student-adapter-path')
+    parser.add_argument('--source-training-epoch', type=int)
+    parser.add_argument('--source-run')
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
+    if args.student_adapter_path:
+        cfg['student_adapter_path'] = str(Path(args.student_adapter_path).resolve())
+    if args.source_training_epoch is not None:
+        cfg['source_training_epoch'] = args.source_training_epoch
+    if args.source_run:
+        cfg['source_run'] = str(Path(args.source_run).resolve())
     run = Path(args.run_dir).resolve()
     for directory in ('evaluation', 'logs', 'provenance'):
         (run / directory).mkdir(parents=True, exist_ok=True)
@@ -373,7 +398,7 @@ def main():
     seed_all(cfg['seed'])
     torch.set_num_threads(4)
     torch.backends.cuda.matmul.allow_tf32 = True
-    evaluate(cfg, run, args.conditions, args.eval_batch_size)
+    evaluate(cfg, run, args.conditions, args.eval_batch_size, args.incorrect_ids_from)
 
 
 if __name__ == '__main__':

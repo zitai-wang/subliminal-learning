@@ -28,8 +28,6 @@ def test_selected_distillation_rejects_non_signal_rows(tmp_path, monkeypatch):
     (candidate / 'evaluation/teacher_cot.jsonl').write_text('\n'.join(json.dumps(x) for x in [
         {'id': 'train:0', 'correct': True, 'finished': True, 'boxed': True,
          'new_tokens': 10, 'response': 'work \\boxed{A}', 'prediction': 'A'},
-        {'id': 'train:1', 'correct': True, 'finished': True, 'boxed': True,
-         'new_tokens': 10, 'response': 'work \\boxed{B}', 'prediction': 'B'},
         {'id': 'train:2', 'correct': False, 'finished': True, 'boxed': True,
          'new_tokens': 10, 'response': 'work \\boxed{C}', 'prediction': 'C'},
     ]) + '\n')

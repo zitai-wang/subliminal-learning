@@ -47,15 +47,17 @@ def main():
     by_id = {row['_id']: row for row in rows}
     direct = {row['id']: row for row in read_rows(candidate / 'evaluation/baseline_direct.jsonl')}
     teacher = {row['id']: row for row in read_rows(candidate / 'evaluation/teacher_cot.jsonl')}
-    assert set(direct) == set(teacher) == set(by_id), 'Candidate outputs must be complete and aligned.'
+    assert set(direct) == set(by_id), 'Direct candidate outputs must cover the training split.'
+    expected_teacher_ids = {item_id for item_id, item in direct.items()
+                            if not bool(item['correct'])}
+    assert set(teacher) == expected_teacher_ids, \
+        'Teacher outputs must cover exactly the direct-incorrect candidate rows.'
 
-    rejected = Counter()
+    rejected = Counter({'direct_correct': len(direct) - len(expected_teacher_ids)})
     eligible = []
-    for item_id in sorted(by_id):
+    for item_id in sorted(expected_teacher_ids):
         base, cot = direct[item_id], teacher[item_id]
-        if bool(base['correct']):
-            rejected['direct_correct'] += 1
-            continue
+        assert not bool(base['correct'])
         if not bool(cot['correct']):
             rejected['teacher_incorrect'] += 1
             continue

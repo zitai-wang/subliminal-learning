@@ -16,3 +16,6 @@
 跨数据集复核（后续实验，不计入上述七步）：
    复用同一份纯数字训练数据和固定 epoch 6 Student，在 MathVision `testmini` 304 题上重新执行原始模型 direct/CoT、Teacher CoT、Student direct/CoT 评测。该复核不重新训练，以便只改变评测数据集。
    同样在 ScienceQA、MMMU、ChartQA、MMBench、MathVerse 和 MMStar 上使用全部有答案的评测 split，执行相同五条件评测；direct 为 512 tokens，CoT 为 2048 tokens，均使用 greedy decoding。
+
+筛选式过程蒸馏对照（后续实验）：
+   在 ScienceQA train 上先运行 direct，再只对 direct 错题运行 Teacher CoT；保留 Teacher 正确且输出完整的样本，按学科均衡选择最多 500 条。用题目、图像和 Teacher 完整推理训练新的 6 轮 LoRA Student，再在 ScienceQA、MMMU、ChartQA、MMBench、MathVerse、MMStar 的完整有标签评测 split 上重跑五条件。该条件是显式过程蒸馏上限，不作为纯数字 subliminal learning 条件。

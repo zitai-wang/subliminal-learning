@@ -102,7 +102,11 @@ def main():
     source_run = Path(cfg['source_run'])
     source_data = source_run / 'data/train.jsonl'
     training = json.loads((Path(cfg['student_adapter_path']) / 'complete.json').read_text())
-    assert training == {'epoch': cfg['source_training_epoch'], 'global_step': 942}
+    assert training['epoch'] == cfg['source_training_epoch']
+    assert isinstance(training['global_step'], int) and training['global_step'] > 0
+    selection_manifest = source_run / 'data/manifest.json'
+    training_method = ('selected_process_distillation' if selection_manifest.exists()
+                       else 'numeric_only_subliminal_sft')
     report = {
         'dataset': cfg['dataset_name'], 'split': cfg['evaluation']['split'],
         'samples': expected, 'source_samples': cfg['evaluation']['source_samples'],
@@ -112,6 +116,7 @@ def main():
         'completed_at': datetime.now(timezone.utc).isoformat(), 'run_dir': str(run),
         'source_run': str(source_run),
         'reused_training': {
+            'method': training_method,
             'epoch': training['epoch'], 'global_step': training['global_step'],
             'adapter_path': str(Path(cfg['student_adapter_path'])),
             'adapter_sha256': hashlib.sha256(adapter.read_bytes()).hexdigest(),
@@ -126,7 +131,9 @@ def main():
             f"Teacher prompt does not improve the {cfg['dataset_name']} CoT baseline, so a positive trait-transfer premise is not established."),
         'limits': [
             'Single fixed Student checkpoint and one training seed.',
-            'No neutral-teacher numeric-data control.',
+            ('Selected process distillation is an explicit upper-bound control, not pure subliminal transfer.'
+             if training_method == 'selected_process_distillation' else
+             'No neutral-teacher numeric-data control.'),
             'Local deterministic answer extraction, without an external judge.',
             'Question-bootstrap intervals do not include sampling or training-seed variation.',
             'This is a post hoc cross-dataset evaluation after inspecting earlier results.',
@@ -135,7 +142,7 @@ def main():
     write_json(run / 'results.json', report)
     lines = [
         f"# Subliminal Learning {cfg['dataset_name']} 结果", '',
-        f"使用 {cfg['dataset_name']} `{cfg['evaluation']['split']}` 的全部 {expected:,} 个可评分样本；Student 为既定 epoch 6 checkpoint。", '',
+        f"使用 {cfg['dataset_name']} `{cfg['evaluation']['split']}` 的全部 {expected:,} 个可评分样本；Student 为既定 epoch {training['epoch']} checkpoint。", '',
         '| 条件 | 正确数 | 准确率 | 未解析 | 生成未结束 |',
         '|---|---:|---:|---:|---:|',
     ]
@@ -148,8 +155,11 @@ def main():
         item = comparisons[label]
         low, high = item['paired_bootstrap_ci95_pp']
         lines.append(f'| {item["after"]} − {item["before"]} | {item["delta_percentage_points"]:+.2f} | [{low:+.2f}, {high:+.2f}] | {item["improved_questions"]} / {item["regressed_questions"]} |')
+    data_description = ('Teacher 正确且 direct 错误的筛选式多模态过程蒸馏数据'
+                        if training_method == 'selected_process_distillation'
+                        else '纯数字 subliminal 训练数据')
     lines += ['', report['interpretation'], '',
-              '本轮复用同一份纯数字训练数据和同一个 epoch 6 Student；direct 使用 512 tokens，CoT 使用 2048 tokens，均为 greedy decoding。', '']
+              f'本轮使用{data_description}和 epoch {training["epoch"]} Student；direct 使用 512 tokens，CoT 使用 2048 tokens，均为 greedy decoding。', '']
     (run / 'results.md').write_text('\n'.join(lines))
     write_json(run / 'status.json', {'stage': 'complete', 'dataset': cfg['dataset_name'],
                                      'samples': expected})
