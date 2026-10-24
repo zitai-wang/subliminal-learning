@@ -1,9 +1,10 @@
-"""Run the selected-process candidate pool after the primary benchmark queue.
+"""Run the selected-process pipeline once all primary work has been assigned.
 
-The primary held-out evaluation has priority.  Once it reports completion this
-worker claims the first idle GPU, produces paired train-split outputs, and
-materializes the auditable high-signal training set.  It never reads a held-out
-test split for selecting training examples.
+The primary held-out evaluation has priority. Once it has no unassigned dataset,
+this worker claims the first idle GPU even if an already assigned primary job is
+still running. It produces paired train-split outputs and materializes the
+auditable high-signal training set. It never reads a held-out test split for
+selecting training examples.
 """
 
 import argparse
@@ -56,9 +57,12 @@ def available(card):
     return not card['pids'] and card['used_mib'] < 2048 and card['utilization'] < 15
 
 
-def primary_complete(run_root):
+def primary_work_assigned(run_root):
     status = Path(run_root) / 'queue_status.json'
-    return status.exists() and json.loads(status.read_text()).get('stage') == 'complete'
+    if not status.exists():
+        return False
+    state = json.loads(status.read_text())
+    return state.get('stage') in {'running', 'complete'} and not state.get('pending')
 
 
 def wait_for_gpu(gpus, poll_seconds, status_path, stage):
@@ -92,8 +96,8 @@ def main():
     log_dir.mkdir(parents=True, exist_ok=True)
     status_path = run_dir / 'queue_status.json'
 
-    while not primary_complete(args.primary_run_root):
-        write_json(status_path, {'stage': 'waiting_for_primary_benchmark', 'updated_at': now(),
+    while not primary_work_assigned(args.primary_run_root):
+        write_json(status_path, {'stage': 'waiting_for_primary_assignment', 'updated_at': now(),
                                  'primary_run_root': str(args.primary_run_root)})
         time.sleep(args.poll_seconds)
     code = 1

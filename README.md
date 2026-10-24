@@ -232,7 +232,7 @@ python -u scripts/run_subliminal_benchmark_queue.py \
 
 Student 仍从相同原始基座开始，使用普通助手系统提示，以题目、图像和 Teacher 的完整正确推理作为监督，训练语言 decoder attention LoRA；视觉模块冻结。训练固定 6 轮，保存 epoch 1、3、6。该条件包含显式题目与推理，因此属于过程蒸馏对照，不能作为纯 subliminal learning 的因果证据。
 
-无人值守队列会等待旧版六基准评测全部完成，然后自动执行候选生成、筛选、训练，并用新 epoch 6 adapter 在六个基准上重跑五条件评测：
+无人值守队列会等待旧版六基准的所有任务都已分配，然后立即监测剩余 GPU；即使旧版最后一个已分配任务仍在运行，也会抢占第一张空卡执行候选生成。随后自动完成筛选、训练，并用新 epoch 6 adapter 在六个基准上重跑五条件评测：
 
 ```bash
 python -u scripts/run_selected_process_distillation_queue.py \
