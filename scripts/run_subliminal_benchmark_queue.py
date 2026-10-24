@@ -101,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-root', type=Path, required=True)
     parser.add_argument('--gpus', default='0,1,2,3')
-    parser.add_argument('--poll-seconds', type=int, default=1)
+    parser.add_argument('--poll-seconds', type=float, default=0.25)
     args = parser.parse_args()
     run_root = args.run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
