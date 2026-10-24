@@ -30,7 +30,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-run', type=Path, required=True)
     parser.add_argument('--output-dir', type=Path, required=True)
-    parser.add_argument('--max-samples', type=int, default=2000)
+    parser.add_argument('--max-samples', type=int, default=500)
     parser.add_argument('--per-subject-cap', type=int, default=250)
     parser.add_argument('--max-new-tokens', type=int, default=1024)
     parser.add_argument('--seed', type=int, default=42)

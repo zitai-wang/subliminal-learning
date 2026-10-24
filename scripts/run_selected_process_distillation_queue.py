@@ -69,7 +69,7 @@ def main():
                         default=ROOT / 'src/config/subliminal_scienceqa_selected_train.yaml')
     parser.add_argument('--gpus', default='0,1,2,3')
     parser.add_argument('--poll-seconds', type=float, default=0.25)
-    parser.add_argument('--max-samples', type=int, default=2000)
+    parser.add_argument('--max-samples', type=int, default=500)
     args = parser.parse_args()
     assert args.poll_seconds > 0
     run_dir, config = args.run_dir.resolve(), args.config.resolve()
